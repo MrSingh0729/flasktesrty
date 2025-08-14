@@ -3,6 +3,7 @@ from flask import send_file
 from xhtml2pdf import pisa
 from flask import send_file, request
 from flask import Response, render_template_string
+from datetime import datetime
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
@@ -431,82 +432,110 @@ def export_pdf():
                      mimetype='application/pdf')
 
 
-@app.route('/project-range-report', methods=['GET', 'POST'])
-def project_range_report():
-    if request.method == 'GET':
-        return render_template("project_range_report.html")
+from utils.api import (
+    get_token,
+    get_fpy_by_model,
+    get_station_ntf_details_by_model,
+    get_station_der_details_by_model
+)
 
-    data = request.get_json()
-    project = data.get("project")
-    start_date = data.get("start_date")
-    end_date = data.get("end_date")
-    rty_goal = float(data.get("rty_goal", 90.0))
-
+@app.route('/model-specific', methods=['GET', 'POST'])
+def model_specific():
     token = get_token()
-    fpy_data_raw = get_fpy(token, [project], start_date=start_date, end_date=end_date)
-
-    if not fpy_data_raw:
-        return {"error": "No data found for given range"}, 404
-
-    desired_columns = ["project", "station", "inPut", "pass", "fail", "notFail", "der", "ntf", "rty"]
-    fpy_df = pd.DataFrame([{col: row.get(col, "") for col in desired_columns} for row in fpy_data_raw]).astype(str)
-
+    selected_model = None
+    station_type = "BE"
+    start_date = None
+    end_date = None
+    rty_goal = 90.0
+    fpy_data = []
     failed_stations = []
-    ntf_rows = []
-    der_rows = []
+    fail_details = []
 
-    try:
-        actual_rty = float(str(fpy_df["rty"].iloc[0]).replace("%", ""))
-        if actual_rty < rty_goal:
-            for _, row in fpy_df.iterrows():
-                station = row["station"]
-                ntf = float(str(row["ntf"]).replace("%", "")) if row["ntf"] else None
-                der = float(str(row["der"]).replace("%", "")) if row["der"] else None
+    if request.method == 'POST':
+        selected_model = request.form.get('model_name')
+        station_type = request.form.get('station_type', 'BE')
+        start_date = request.form.get('start_date')
+        end_date = request.form.get('end_date')
+        rty_goal = float(request.form.get('rty_goal', 90.0))
 
-                if station in NTF_GOALS and ntf > NTF_GOALS[station]:
-                    failed_stations.append((station, "NTF", ntf, NTF_GOALS[station]))
-                    detail_df = pd.DataFrame(get_station_ntf_details(token, project, station, start_date, end_date)).rename(columns={
-                        "substation": "Computer Name",
-                        "sn": "SN",
-                        "symptomEnName": "Fault Description"
-                    })[["SN", "Fault Description", "Computer Name"]]
+        fpy_data_raw = get_fpy_by_model(token, selected_model, station_type, start_date, end_date)
 
-                    top_computers = detail_df["Computer Name"].value_counts().head(3).to_dict()
-                    for comp, count in top_computers.items():
-                        faults = detail_df[detail_df["Computer Name"] == comp]["Fault Description"].value_counts().head(3)
-                        fault_lines = [f"{i+1}. {fault} → {qty}" for i, (fault, qty) in enumerate(faults.items())]
-                        ntf_rows.append([f"{comp} → {count}", fault_lines])
+        desired_columns = ["project", "station", "inPut", "pass", "fail", "notFail", "der", "ntf", "rty"]
+        fpy_data = [
+            {col: row.get(col, "") for col in desired_columns}
+            for row in fpy_data_raw
+        ]
 
-                if station in DER_GOALS and der > DER_GOALS[station]:
-                    failed_stations.append((station, "DER", der, DER_GOALS[station]))
-                    detail_df = pd.DataFrame(get_station_der_details(token, project, station, start_date, end_date)).rename(columns={
-                        "sn": "SN",
-                        "responsibilityEnName": "Responsibility",
-                        "symptomEnName": "Symptoms"
-                    })[["SN", "Responsibility", "Symptoms"]]
+        if fpy_data and "rty" in fpy_data[0]:
+            try:
+                actual_rty = float(str(fpy_data[0]["rty"]).replace("%", ""))
+                if actual_rty < rty_goal:
+                    for row in fpy_data:
+                        station = row.get("station")
+                        ntf = float(str(row.get("ntf", "0")).replace("%", "")) if row.get("ntf") else None
+                        der = float(str(row.get("der", "0")).replace("%", "")) if row.get("der") else None
 
-                    top_symptoms = detail_df["Symptoms"].value_counts().head(3)
-                    top_responsibilities = detail_df["Responsibility"].value_counts().head(3)
+                        if station in NTF_GOALS and ntf is not None and ntf > NTF_GOALS[station]:
+                            failed_stations.append((station, "NTF", ntf, NTF_GOALS[station]))
+                            detail_data = get_station_ntf_details_by_model(token, selected_model, station, station_type, start_date, end_date)
+                            detail_df = pd.DataFrame(detail_data)
+                            detail_df = detail_df.rename(columns={
+                                "substation": "Computer Name",
+                                "sn": "SN",
+                                "symptomEnName": "Fault Description"
+                            })
+                            detail_df = detail_df[["SN", "Fault Description", "Computer Name"]]
 
-                    for i in range(3):
-                        symptom = top_symptoms.index[i] if i < len(top_symptoms) else ""
-                        symptom_qty = top_symptoms.iloc[i] if i < len(top_symptoms) else ""
-                        resp = top_responsibilities.index[i] if i < len(top_responsibilities) else ""
-                        resp_qty = top_responsibilities.iloc[i] if i < len(top_responsibilities) else ""
-                        der_rows.append([f"{symptom} → {symptom_qty}", f"{resp} → {resp_qty}"])
-    except Exception as e:
-        print("RTY analysis error:", e)
+                            top_computers = detail_df["Computer Name"].value_counts().head(3).to_dict()
+                            top_faults_by_computer = {}
+                            for comp in top_computers:
+                                comp_faults = detail_df[detail_df["Computer Name"] == comp]
+                                faults = comp_faults["Fault Description"].value_counts().head(3).reset_index().values.tolist()
+                                top_faults_by_computer[comp] = faults
 
-    return {
-        "project": project,
-        "start_date": start_date,
-        "end_date": end_date,
-        "rty_goal": rty_goal,
-        "fpy_table": fpy_df.to_dict(orient="records"),
-        "failed_stations": failed_stations,
-        "ntf_analysis": ntf_rows,
-        "der_analysis": der_rows
-    }
+                            fail_details.append({
+                                "station": station,
+                                "metric": "NTF",
+                                "actual": ntf,
+                                "goal": NTF_GOALS[station],
+                                "top_computers": top_computers,
+                                "top_faults_by_computer": top_faults_by_computer
+                            })
+
+                        if station in DER_GOALS and der is not None and der > DER_GOALS[station]:
+                            failed_stations.append((station, "DER", der, DER_GOALS[station]))
+                            detail_data = get_station_der_details_by_model(token, selected_model, station, station_type, start_date, end_date)
+                            detail_df = pd.DataFrame(detail_data)
+                            detail_df = detail_df.rename(columns={
+                                "sn": "SN",
+                                "responsibilityEnName": "Responsibility",
+                                "symptomEnName": "Symptoms"
+                            })
+                            detail_df = detail_df[["SN", "Responsibility", "Symptoms"]]
+                            top_symptoms = get_top_n_counts(detail_df, "Symptoms", 3)
+                            top_responsibilities = get_top_n_counts(detail_df, "Responsibility", 3)
+
+                            fail_details.append({
+                                "station": station,
+                                "metric": "DER",
+                                "actual": der,
+                                "goal": DER_GOALS[station],
+                                "top_symptoms": top_symptoms.to_dict(orient="records"),
+                                "top_responsibilities": top_responsibilities.to_dict(orient="records")
+                            })
+            except Exception as e:
+                print("RTY analysis error:", e)
+
+    return render_template("model_specific.html",
+                           selected_model=selected_model,
+                           station_type=station_type,
+                           start_date=start_date,
+                           end_date=end_date,
+                           rty_goal=rty_goal,
+                           data=fpy_data,
+                           failed_stations=failed_stations,
+                           fail_details=fail_details)
+
 
 
 
