@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FPY Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header class="topbar">
+        <div class="logo">
+            <h1>🏭 Factory FPY Dashboard</h1>
+        </div>
+        <nav class="nav-links">
+            <a href="{{ url_for('index') }}">🏠 Home</a>
+            <a href="{{ url_for('auto_data') }}">⚡ Auto Data</a>
+            <a href="{{ url_for('project_specific') }}">🎯 Project Specific</a>
+            <a href="{{ url_for('multi_project_goals') }}">📊 Multi-Project Goals</a>
+            <a href="{{ url_for('top_failures') }}">📊 Top Failures</a>
+        </nav>
+    </header>
+    <hr>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

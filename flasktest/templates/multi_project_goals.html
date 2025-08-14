@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>📊 Multi-Project RTY Goal Check</h2>
+
+<form method="POST">
+    {% for project, goal in goals.items() %}
+    <div>
+        <label>{{ project }} Goal (%):</label>
+        <input type="number" step="0.1" name="goal_{{ project }}" value="{{ goal }}">
+    </div>
+    {% endfor %}
+    <button type="submit">Check Goals</button>
+</form>
+
+{% if results %}
+<h3>Results</h3>
+<ul>
+    {% for project, data in results.items() %}
+    <li><strong>{{ project }}</strong>: {{ data }}</li>
+    {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

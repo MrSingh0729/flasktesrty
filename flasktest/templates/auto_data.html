@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+    <h2>⚡ Auto FPY Report</h2>
+    <p class="timestamp">Live data from today 08:00 → <strong>{{ current_time }}</strong></p>
+
+    {% if data %}
+    <table id="fpyTable" class="display nowrap" style="width:100%">
+        <thead>
+            <tr>
+                {% for col in data[0].keys() %}
+                <th>{{ col }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in data %}
+            <tr>
+                {% for val in row.values() %}
+                <td>{{ val }}</td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="alert warning">
+        <strong>⚠ No current data available.</strong>
+    </div>
+    {% endif %}
+</div>
+
+<!-- DataTables CSS -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.dataTables.min.css">
+
+<!-- jQuery + DataTables JS -->
+<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+
+<!-- DataTables Buttons -->
+<script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.print.min.js"></script>
+
+<!-- Excel Export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<!-- PDF Export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+
+<script>
+$(document).ready(function() {
+    $('#fpyTable').DataTable({
+        scrollX: true,
+        responsive: true,
+        pageLength: 20,
+        lengthMenu: [ [20, 50, 100, 200], [20, 50, 100, 200] ],
+        dom: 'Blfrtip',
+        buttons: [
+            'copy',
+            {
+                extend: 'csv',
+                title: 'FPY_Report'
+            },
+            {
+                extend: 'excel',
+                title: 'FPY_Report'
+            },
+            {
+                extend: 'pdf',
+                title: 'FPY_Report',
+                orientation: 'landscape',
+                pageSize: 'A4'
+            },
+            'print'
+        ]
+    });
+});
+</script>
+{% endblock %}
