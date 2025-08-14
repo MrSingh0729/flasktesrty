@@ -431,8 +431,11 @@ def export_pdf():
                      mimetype='application/pdf')
 
 
-@app.route('/project-range-report', methods=['POST'])
+@app.route('/project-range-report', methods=['GET', 'POST'])
 def project_range_report():
+    if request.method == 'GET':
+        return render_template("project_range_report.html")
+
     data = request.get_json()
     project = data.get("project")
     start_date = data.get("start_date")
@@ -446,8 +449,7 @@ def project_range_report():
         return {"error": "No data found for given range"}, 404
 
     desired_columns = ["project", "station", "inPut", "pass", "fail", "notFail", "der", "ntf", "rty"]
-    fpy_data = [{col: row.get(col, "") for col in desired_columns} for row in fpy_data_raw]
-    fpy_df = pd.DataFrame(fpy_data).astype(str)
+    fpy_df = pd.DataFrame([{col: row.get(col, "") for col in desired_columns} for row in fpy_data_raw]).astype(str)
 
     failed_stations = []
     ntf_rows = []
